@@ -12,7 +12,7 @@
 using namespace std;
 
 constexpr char ramp[] = " .:-=+*#%@";
-constexpr int edge_threshold = 80;
+constexpr int EDGE_THRESHOLD = 90;
 constexpr float pi = 3.14159265358979323846f;
 
 // Kernels for Sobel filter
@@ -120,7 +120,7 @@ void apply_sobel_filter(std::vector<AsciiCell> &cells, int output_height, int ou
             }
         }
         float G = sqrt(pow(gx, 2) + pow(gy, 2));
-        if (G > edge_threshold) {
+        if (G > EDGE_THRESHOLD) {
             float theta = atan2(-gy, gx);
             float edge_angle = theta - pi / 2.0f;
 
@@ -148,7 +148,7 @@ void apply_sobel_filter(std::vector<AsciiCell> &cells, int output_height, int ou
     }
 }
 
-void ascii_convert(unsigned char* image_buffer,  std::vector<AsciiCell> &cells, int output_height, int output_width, int width, int height, int color_channels) {
+void ascii_convert(unsigned char* image_buffer, std::vector<AsciiCell> &cells, int output_height, int output_width, int width, int height, int color_channels) {
     unsigned char r,g,b;
    
     float max_luminance = 0;
@@ -201,6 +201,44 @@ void ascii_convert(unsigned char* image_buffer,  std::vector<AsciiCell> &cells, 
     return;
 }
 
+void save_svg(const std::vector<AsciiCell>& cells, int rows, int cols) {
+    constexpr int char_width = 10;
+    constexpr int char_height = 18;
+    constexpr int font_size = 16;
+
+    std::ofstream svg("ascii.svg");
+    svg << "<svg xmlns=\"http://www.w3.org/2000/svg\" "
+        << "width=\"" << cols * char_width << "\" "
+        << "height=\"" << rows * char_height << "\" "
+        << "viewBox=\"0 0 " << cols * char_width << " "
+        << rows * char_height << "\">\n";
+    svg << "<rect width=\"100%\" height=\"100%\" fill=\"#111\"/>\n";
+    svg << "<g font-family=\"monospace\" font-size=\"" << font_size
+        << "\" xml:space=\"preserve\">\n";
+
+    for (int row = 0; row < rows; ++row) {
+        for (int col = 0; col < cols; ++col) {
+            const AsciiCell& cell = cells[row * cols + col];
+            svg << "<text x=\"" << col * char_width
+                << "\" y=\"" << row * char_height + font_size
+                << "\" fill=\"rgb(" << cell.r << "," << cell.g << ","
+                << cell.b << ")\">" << cell.symbol << "</text>\n";
+        }
+    }
+
+    svg << "</g>\n</svg>\n";
+}
+
+void print_to_terminal(std::vector<AsciiCell> &cells, int output_width) {
+     for (int i = 0; i<cells.size(); i++){
+        AsciiCell cell = cells[i]; 
+        std::cout << "\x1b[38;2;" << cell.r << ';' << cell.g << ';' << cell.b << 'm' << cell.symbol << "\x1b[0m";
+
+        if (!((i + 1) % output_width)) {
+            std::cout << "\n";
+        }
+    }   
+}
 
 
 int main(int argc, char** argv) {
@@ -220,14 +258,8 @@ int main(int argc, char** argv) {
     
     stbi_image_free(image_buffer);
 
-    for (int i = 0; i<cells.size(); i++){
-        AsciiCell cell = cells[i]; 
-        //38;2 to set character instead of background
-        std::cout << "\x1b[38;2;" << cell.r << ';' << cell.g << ';' << cell.b << 'm' << cell.symbol << "\x1b[0m";
-
-        if (!((i + 1) % output_width)) {
-            std::cout << "\n";
-        }
-    }   
+    print_to_terminal(cells, output_width);
+    save_svg(cells, output_height, output_width);
+   
     return 0;
 }
