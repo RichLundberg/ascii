@@ -5,6 +5,9 @@
 #include <vector>
 #include <limits>
 #include <cstdlib>
+#include <iterator>
+#include <thread>
+#include <chrono>
 
 #define STB_IMAGE_IMPLEMENTATION
 #include <stb/stb_image.h>
@@ -33,6 +36,16 @@ struct AsciiCell {
     int r;
     int g;
     int b;
+};
+
+struct MediaInfo {
+    std::string filename;
+    std::vector<AsciiCell> cells; 
+    int width;
+    int height; 
+    int color_channels; 
+    int output_width;
+    double char_aspect_ratio;
 };
 
 /**
@@ -216,7 +229,7 @@ void save_svg(const std::vector<AsciiCell>& cells, int rows, int cols) {
     svg << "<g font-family=\"monospace\" font-size=\"" << font_size
         << "\" xml:space=\"preserve\">\n";
 
-    for (int row = 0; row < rows; ++row) {
+    for (int row=0; row < rows; ++row) {
         for (int col = 0; col < cols; ++col) {
             const AsciiCell& cell = cells[row * cols + col];
             svg << "<text x=\"" << col * char_width
@@ -240,26 +253,91 @@ void print_to_terminal(std::vector<AsciiCell> &cells, int output_width) {
     }   
 }
 
-
-int main(int argc, char** argv) {
-    int width, height, color_channels;
+void image(MediaInfo &media_info) {
     
-    std::string filename = argv[1];
-    std::string output_width_str = argv[2];
-    std::vector<AsciiCell> cells;
-    
-    unsigned char* image_buffer = stbi_load(filename.c_str(), &width, &height, &color_channels, 0);
+    unsigned char* image_buffer = stbi_load(media_info.filename.c_str(), &media_info.width, &media_info.height, &media_info.color_channels, 0);
 
-    double charAspectRatio = 0.5;
-    int output_width = std::stoi(output_width_str);
-    int output_height = static_cast<int>(height * (static_cast<double>(output_width) / width) * charAspectRatio);
-
-    ascii_convert(image_buffer, cells, output_height, output_width, width, height, color_channels);
+    int output_height = static_cast<int>(media_info.height * (static_cast<double>(media_info.output_width) / media_info.width) * media_info.char_aspect_ratio);
+    ascii_convert(
+        image_buffer, 
+        media_info.cells, 
+        output_height, 
+        media_info.output_width, 
+        media_info.width, 
+        media_info.height, 
+        media_info.color_channels);
     
     stbi_image_free(image_buffer);
 
-    print_to_terminal(cells, output_width);
-    save_svg(cells, output_height, output_width);
+    print_to_terminal(media_info.cells, media_info.output_width);
+    save_svg(media_info.cells, output_height, media_info.output_width);
+}
+
+void create_gif(MediaInfo &media_info) {
+    std::ifstream file(media_info.filename, std::ios::binary);
+        std::vector<stbi_uc> bytes{
+            std::istreambuf_iterator<char>(file),
+            std::istreambuf_iterator<char>()};
+        
+        int frame_count = 0;
+        int *delays = nullptr;
+        
+        unsigned char* gif_buffer = stbi_load_gif_from_memory(
+            bytes.data(),
+            static_cast<int>(bytes.size()),
+            &delays,
+            &media_info.width,
+            &media_info.height,
+            &frame_count,
+            &media_info.color_channels,
+            4);
+        
+        int output_height = static_cast<int>(media_info.height * (static_cast<double>(media_info.output_width) / media_info.width) * media_info.char_aspect_ratio);
+
+        while (true) {
+
+            for (int i=0; i<frame_count; i++) {
+                media_info.cells.clear();
+                
+                unsigned char* image_buffer = gif_buffer + i * media_info.width * media_info.height * 4; // 4 is the number of bytes per GIF pixel RGBA
+                ascii_convert(
+                    image_buffer, 
+                    media_info.cells, 
+                    output_height, 
+                    media_info.output_width, 
+                    media_info.width, 
+                    media_info.height, 
+                    media_info.color_channels);
+                
+                std::cout << "\033[2J\033[H";
+                print_to_terminal(media_info.cells, media_info.output_width);
+                std::cout.flush();
+                std::this_thread::sleep_for(std::chrono::milliseconds(100));
+            }
+        }
+        stbi_image_free(gif_buffer);
+        stbi_image_free(delays);
+}
+
+
+int main(int argc, char** argv) {
+    
+    int width, height, color_channels;
+    std::vector<AsciiCell> cells;
+
+    std::string filename = argv[2];
+    std::string output_width_str = argv[3];
+
+    double char_aspect_ratio = 0.5;
+    int output_width = std::stoi(output_width_str);
+
+    MediaInfo media_info = MediaInfo{filename, cells, width, height, color_channels, output_width, char_aspect_ratio};
+    if (std::string(argv[1]) == "--image") {
+        image(media_info);
+    }
+    else if (std::string(argv[1]) == "--gif") {
+        create_gif(media_info);
+    }
    
     return 0;
 }
